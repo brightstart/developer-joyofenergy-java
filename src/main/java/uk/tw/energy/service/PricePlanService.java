@@ -3,6 +3,7 @@ package uk.tw.energy.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -27,12 +28,9 @@ public class PricePlanService {
             String smartMeterId) {
         Optional<List<ElectricityReading>> electricityReadings = meterReadingService.getReadings(smartMeterId);
 
-        if (!electricityReadings.isPresent()) {
-            return Optional.empty();
-        }
+        return electricityReadings.map(readings -> pricePlans.stream()
+                .collect(Collectors.toMap(PricePlan::getPlanName, t -> calculateCost(readings, t))));
 
-        return Optional.of(pricePlans.stream()
-                .collect(Collectors.toMap(PricePlan::getPlanName, t -> calculateCost(electricityReadings.get(), t))));
     }
 
     private BigDecimal calculateCost(List<ElectricityReading> electricityReadings, PricePlan pricePlan) {
@@ -46,7 +44,7 @@ public class PricePlanService {
     private BigDecimal calculateAverageReading(List<ElectricityReading> electricityReadings) {
         BigDecimal summedReadings = electricityReadings.stream()
                 .map(ElectricityReading::reading)
-                .reduce(BigDecimal.ZERO, (reading, accumulator) -> reading.add(accumulator));
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return summedReadings.divide(BigDecimal.valueOf(electricityReadings.size()), RoundingMode.HALF_UP);
     }
@@ -54,11 +52,11 @@ public class PricePlanService {
     private BigDecimal calculateTimeElapsed(List<ElectricityReading> electricityReadings) {
         ElectricityReading first = electricityReadings.stream()
                 .min(Comparator.comparing(ElectricityReading::time))
-                .get();
+                .orElse(new ElectricityReading(Instant.MIN, BigDecimal.ZERO));
 
         ElectricityReading last = electricityReadings.stream()
                 .max(Comparator.comparing(ElectricityReading::time))
-                .get();
+                .orElse(new ElectricityReading(Instant.MAX, BigDecimal.valueOf(Long.MAX_VALUE)));
 
         return BigDecimal.valueOf(Duration.between(first.time(), last.time()).getSeconds() / 3600.0);
     }
